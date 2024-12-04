@@ -7,7 +7,7 @@ DOCKER_TAG="pytorch/torchserve:llm_diffusion_serving_app"
 # LLM_HF_ID=meta-llama/Meta-Llama-3-8B
 # LLM_HF_ID=meta-llama/Llama-3.2-1B-Instruct
 LLM_HF_ID=meta-llama/Llama-3.2-3B-Instruct
-SD_HF_ID=stabilityai/stable-diffusion-xl-base-1.0
+SD_HF_ID=stabilityai/stable-diffusion-3-medium-diffusers
 
 # Get relative path of example dir
 EXAMPLE_DIR=$(dirname "$(readlink -f "$0")")

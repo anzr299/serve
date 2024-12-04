@@ -23,6 +23,7 @@ Usage:
 import argparse
 import importlib.metadata
 import json
+import nncf.torch
 import numpy as np
 import os
 import subprocess
@@ -38,13 +39,12 @@ from torch.profiler import profile, record_function, ProfilerActivity
 import openvino.torch  # noqa: F401  # Import to enable optimizations from OpenVINO
 from PIL import Image
 from diffusers import UNet2DConditionModel, DiffusionPipeline, LCMScheduler
-
+import nncf
 
 class RunMode(Enum):
     EAGER = "eager"
     TC_INDUCTOR = "tc_inductor"
     TC_OPENVINO = "tc_openvino"
-
 
 def setup_pipeline(run_mode: str, ckpt: str, dtype=torch.float16) -> DiffusionPipeline:
     """Setup function remains unchanged"""
@@ -63,14 +63,33 @@ def setup_pipeline(run_mode: str, ckpt: str, dtype=torch.float16) -> DiffusionPi
         compile_options = {}
         print("Using eager mode (no compilation)")
 
-    unet = UNet2DConditionModel.from_pretrained(f"{ckpt}/lcm/", torch_dtype=dtype)
-    pipe = DiffusionPipeline.from_pretrained(ckpt, unet=unet, torch_dtype=dtype)
-    pipe.scheduler = LCMScheduler.from_config(pipe.scheduler.config)
+    pipe = DiffusionPipeline.from_pretrained(ckpt, text_encoder_3=None, tokenizer_3=None)
 
     if run_mode != RunMode.EAGER.value:
         print("Torch.Compiling models...")
+        unet_kwargs = {}
+        unet_kwargs["hidden_states"] = torch.ones((2, 16, 128, 128))
+        unet_kwargs["timestep"] = torch.from_numpy(np.array([1, 2], dtype=np.float32))
+        unet_kwargs["encoder_hidden_states"] = torch.ones((2, 154, 4096))
+        unet_kwargs["pooled_projections"] = torch.ones((2, 2048))
+        unet_kwargs['joint_attention_kwargs'] = None
+        unet_kwargs['return_dict'] = False
+        with nncf.torch.disable_patching():
+            exported_unet = torch.export.export_for_training(pipe.transformer.eval(), args=(), kwargs=(unet_kwargs)).module()
+            with torch.no_grad():
+                quantized_unet = nncf.quantize(
+                    model=exported_unet,
+                    calibration_dataset=nncf.Dataset([unet_kwargs]),
+                    subset_size=1,
+                    model_type=nncf.ModelType.TRANSFORMER,
+                    advanced_parameters=nncf.AdvancedQuantizationParameters(
+                        smooth_quant_alpha=-1, disable_bias_correction=True
+                    )
+                )
+        pipe.transformer.forward = quantized_unet
         pipe.text_encoder = torch.compile(pipe.text_encoder, **compile_options)
-        pipe.unet = torch.compile(pipe.unet, **compile_options)
+        pipe.text_encoder_2 = torch.compile(pipe.text_encoder_2, **compile_options)
+        pipe.transformer = torch.compile(pipe.transformer, **compile_options)
         pipe.vae.decode = torch.compile(pipe.vae.decode, **compile_options)
 
     pipe.to("cpu")
@@ -331,13 +350,12 @@ def main():
     ]
 
     params = {
-        "ckpt": "/home/model-server/model-store/stabilityai---stable-diffusion-xl-base-1.0/model",
+        "ckpt": "stabilityai/stable-diffusion-3-medium-diffusers",
         "guidance_scale": 5.0,
         "num_inference_steps": 4,
-        "height": 768,
-        "width": 768,
+        "height": 1024,
+        "width": 1024,
         "prompt": "A close-up HD shot of a vibrant macaw parrot perched on a branch in a lush jungle ",
-        "dtype": torch.float16,
     }
     # params["prompt"] = "A close-up of a blooming cherry blossom tree in full bloom"
 

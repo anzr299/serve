@@ -45,14 +45,13 @@ parser.add_argument(
 args = parser.parse_args()
 
 unet = UNet2DConditionModel.from_pretrained(
-    "latent-consistency/lcm-sdxl", torch_dtype=torch.float16, variant="fp16"
+    "latent-consistency/lcm-sdxl"
 )
 
 pipeline = DiffusionPipeline.from_pretrained(
     args.model_name,
     unet=unet,
-    torch_dtype=torch.float16,
-    variant="fp16",
+    text_encoder_3=None, tokenizer_3=None
 )
 pipeline.save_pretrained(args.model_path)
 unet.save_pretrained(f"{args.model_path}/lcm")

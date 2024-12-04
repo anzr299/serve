@@ -14,4 +14,4 @@ handler:
     profile: true
     model_path: "model"
     is_xl: false
-    is_lcm: true
+    is_lcm: false
