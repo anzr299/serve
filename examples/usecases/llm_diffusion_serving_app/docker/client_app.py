@@ -107,11 +107,11 @@ with st.sidebar:
     )
 
     height = st.sidebar.number_input(
-        "height", min_value=256, max_value=2048, value=768, step=128
+        "height", min_value=256, max_value=2048, value=512, step=128
     )
 
     width = st.sidebar.number_input(
-        "width", min_value=256, max_value=2048, value=768, step=128
+        "width", min_value=256, max_value=2048, value=512, step=128
     )
 
 

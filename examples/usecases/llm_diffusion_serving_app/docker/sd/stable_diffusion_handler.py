@@ -15,7 +15,7 @@ from diffusers import (
 )
 from ts.handler_utils.timer import timed
 from ts.torch_handler.base_handler import BaseHandler
-from examples.usecases.llm_diffusion_serving_app.docker.sd.utils import load_fx_pipeline
+from utils import load_fx_pipeline
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +72,7 @@ class StableDiffusionHandler(BaseHandler):
             pipe.text_encoder_2 = torch.compile(pipe.text_encoder_2, **compile_options)
             pipe.text_encoder = torch.compile(pipe.text_encoder, **compile_options)
             pipe.transformer = torch.compile(pipe.transformer, **compile_options)
-            # pipe.vae.decode = torch.compile(pipe.vae.decode, **compile_options)
+            pipe.vae.decoder = torch.compile(pipe.vae.decoder, **compile_options)
 
         elif is_xl:
             pipe = StableDiffusionXLPipeline.from_pretrained(
@@ -138,8 +138,8 @@ class StableDiffusionHandler(BaseHandler):
             model_inputs["prompt"],
             num_inference_steps=num_inference_steps,
             guidance_scale=guidance_scale,
-            height=height,
-            width=width
+            height=512,
+            width=512
         ).images
 
         return inferences
