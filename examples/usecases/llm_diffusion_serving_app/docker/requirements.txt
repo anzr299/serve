@@ -6,3 +6,5 @@ aiohttp
 accelerate
 tabulate
 torch>=2.5.1
+nncf @ git+https://github.com/openvinotoolkit/nncf.git
+torchserve

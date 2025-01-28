@@ -71,8 +71,7 @@ def start_torchserve_server():
         """Launch the TorchServe server with the specified configurations."""
         subprocess.run(
             [
-                "torchserve --start --ts-config /home/model-server/config.properties "
-                "--disable-token-auth --enable-model-api"
+                "torchserve --start --ts-config /home/model-server/config.properties --disable-token-auth --enable-model-api --ncs"
             ],
             shell=True,
             check=True,

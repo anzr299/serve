@@ -65,7 +65,9 @@ setup_sd() {
             --version 1.0 \
             --handler stable_diffusion_handler.py \
             --config-file model-config.yaml \
-            --archive-format no-archive
+            --archive-format no-archive \
+            --extra-files "utils.py", \
+
 
         mv /home/model-server/model-store/$MODEL_DIR_SD/model $MODEL_DIR_SD
         mv $MODEL_DIR_SD /home/model-server/model-store/

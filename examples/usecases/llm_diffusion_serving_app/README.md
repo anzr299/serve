@@ -29,6 +29,22 @@ cd serve
 # Run that "docker run" command to launch the Streamlit app for both the server and client.
 ```
 
+#### Developer Scripts:
+examples/usecases/llm_diffusion_serving_app/docker/quantization.py is a script to quantize the SD3 model and save to "./sd-3", 
+The user can define the save location using the argument --save_path args
+
+```bash
+# 1: Set HF Token as Env variable
+export HUGGINGFACE_TOKEN=<HUGGINGFACE_TOKEN>
+# 2: Set Up requirements using examples/usecases/llm_diffusion_serving_app/docker/sd/requirements.txt
+pip install -r examples/usecases/llm_diffusion_serving_app/docker/sd/requirements.txt
+# 3: Use the quantize script to run quantization and save model. This saves the generated model by default in sd3-fx/
+python examples/usecases/llm_diffusion_serving_app/docker/quantize.py --save_path sd3-fx/
+# 4: Use the inference script to run inference. This saves the generated image by default in output/generated_image.png 
+python examples/usecases/llm_diffusion_serving_app/docker/inference.py --prompt "elon musk mad at china"
+```
+
+
 #### Sample Output of Docker Build:
 
 <details>

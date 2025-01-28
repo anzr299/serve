@@ -1,3 +1,5 @@
-openvino>=2024.1.0
+openvino>=2024.6.0
 torch>=2.1.0
-diffusers
+diffusers @ git+https://github.com/anzr299/diffusers.git@patch-1
+datasets
+nncf

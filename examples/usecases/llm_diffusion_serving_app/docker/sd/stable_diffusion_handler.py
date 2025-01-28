@@ -15,6 +15,7 @@ from diffusers import (
 )
 from ts.handler_utils.timer import timed
 from ts.torch_handler.base_handler import BaseHandler
+from examples.usecases.llm_diffusion_serving_app.docker.sd.utils import load_fx_pipeline
 
 logger = logging.getLogger(__name__)
 
@@ -67,14 +68,11 @@ class StableDiffusionHandler(BaseHandler):
         logger.info(f"Loading the SDXL LCM pipeline using dtype: {dtype}")
         t0 = time.time()
         if is_lcm:
-            unet = UNet2DConditionModel.from_pretrained(
-                f"{ckpt}/lcm/", torch_dtype=dtype
-            )
-            pipe = DiffusionPipeline.from_pretrained(ckpt, unet=unet, torch_dtype=dtype)
-            pipe.scheduler = LCMScheduler.from_config(pipe.scheduler.config)
+            pipe = load_fx_pipeline(ckpt)
+            pipe.text_encoder_2 = torch.compile(pipe.text_encoder_2, **compile_options)
             pipe.text_encoder = torch.compile(pipe.text_encoder, **compile_options)
-            pipe.unet = torch.compile(pipe.unet, **compile_options)
-            pipe.vae.decode = torch.compile(pipe.vae.decode, **compile_options)
+            pipe.transformer = torch.compile(pipe.transformer, **compile_options)
+            # pipe.vae.decode = torch.compile(pipe.vae.decode, **compile_options)
 
         elif is_xl:
             pipe = StableDiffusionXLPipeline.from_pretrained(
@@ -132,16 +130,16 @@ class StableDiffusionHandler(BaseHandler):
             list : It returns a list of the generate images for the input text
         """
         # Handling inference for sequence_classification.
-        guidance_scale = model_inputs.get("guidance_scale") or 4.0
-        num_inference_steps = model_inputs.get("num_inference_steps") or 4
-        height = model_inputs.get("height") or 768
-        width = model_inputs.get("width") or 768
+        guidance_scale = model_inputs.get("guidance_scale") or 5.0
+        num_inference_steps = model_inputs.get("num_inference_steps") or 28
+        height = model_inputs.get("height") or 512
+        width = model_inputs.get("width") or 512
         inferences = self.pipeline(
             model_inputs["prompt"],
             num_inference_steps=num_inference_steps,
             guidance_scale=guidance_scale,
             height=height,
-            width=width,
+            width=width
         ).images
 
         return inferences

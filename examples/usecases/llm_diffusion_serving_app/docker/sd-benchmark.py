@@ -23,6 +23,7 @@ Usage:
 import argparse
 import importlib.metadata
 import json
+import nncf.torch
 import numpy as np
 import os
 import subprocess
@@ -37,13 +38,17 @@ import torch
 from torch.profiler import profile, record_function, ProfilerActivity
 import openvino.torch  # noqa: F401  # Import to enable optimizations from OpenVINO
 from PIL import Image
-from diffusers import UNet2DConditionModel, DiffusionPipeline, LCMScheduler
-
+from diffusers import UNet2DConditionModel, DiffusionPipeline, LCMScheduler, StableDiffusion3Pipeline
+import nncf
+from examples.usecases.llm_diffusion_serving_app.docker.sd.utils import collect_calibration_data, init_pipeline, export_models
+from pathlib import Path
+import pickle
+from nncf.quantization.range_estimator import RangeEstimatorParametersSet
 
 class RunMode(Enum):
-    EAGER = "eager"
-    TC_INDUCTOR = "tc_inductor"
-    TC_OPENVINO = "tc_openvino"
+    EAGER = "eager FP"
+    TC_INDUCTOR = "tc_inductor I8"
+    TC_OPENVINO = "tc_openvino FP"
 
 
 def setup_pipeline(run_mode: str, ckpt: str, dtype=torch.float16) -> DiffusionPipeline:
@@ -63,15 +68,37 @@ def setup_pipeline(run_mode: str, ckpt: str, dtype=torch.float16) -> DiffusionPi
         compile_options = {}
         print("Using eager mode (no compilation)")
 
-    unet = UNet2DConditionModel.from_pretrained(f"{ckpt}/lcm/", torch_dtype=dtype)
-    pipe = DiffusionPipeline.from_pretrained(ckpt, unet=unet, torch_dtype=dtype)
-    pipe.scheduler = LCMScheduler.from_config(pipe.scheduler.config)
+    pipe = StableDiffusion3Pipeline.from_pretrained("stabilityai/stable-diffusion-3-medium-diffusers", text_encoder_3=None, tokenizer_3=None)
 
     if run_mode != RunMode.EAGER.value:
         print("Torch.Compiling models...")
+        models_dict, configs_dict = export_models(pipe)
+        
+        calibration_dataset = collect_calibration_data(pipe, calibration_dataset_size=1, num_inference_steps=1)
+
+        models_dict['text_encoder'] = nncf.compress_weights(models_dict['text_encoder'])
+        models_dict['text_encoder_2'] = nncf.compress_weights(models_dict['text_encoder_2'])
+        models_dict['vae_encoder'] = nncf.compress_weights(models_dict['vae_encoder'])
+        models_dict['vae_decoder'] = nncf.compress_weights(models_dict['vae_decoder'])
+
+        transformer = models_dict["transformer"]
+        quantized_transformer = nncf.quantize(
+            transformer,
+            calibration_dataset=nncf.Dataset(calibration_dataset),
+            subset_size=len(calibration_dataset),
+            model_type=nncf.ModelType.TRANSFORMER,
+            advanced_parameters=nncf.AdvancedQuantizationParameters(
+                smooth_quant_alpha=0.7,
+                disable_bias_correction=True,
+                weights_range_estimator_params=RangeEstimatorParametersSet.MINMAX,
+                activations_range_estimator_params=RangeEstimatorParametersSet.MINMAX,
+            )
+        )
         pipe.text_encoder = torch.compile(pipe.text_encoder, **compile_options)
-        pipe.unet = torch.compile(pipe.unet, **compile_options)
+        pipe.text_encoder_2 = torch.compile(pipe.text_encoder_2, **compile_options)
+        pipe.transformer = torch.compile(quantized_transformer, **compile_options)
         pipe.vae.decode = torch.compile(pipe.vae.decode, **compile_options)
+        pipe = init_pipeline(models_dict, configs_dict) 
 
     pipe.to("cpu")
     return pipe
@@ -331,11 +358,11 @@ def main():
     ]
 
     params = {
-        "ckpt": "/home/model-server/model-store/stabilityai---stable-diffusion-xl-base-1.0/model",
+        "ckpt": "stabilityai/stable-diffusion-3-medium",
         "guidance_scale": 5.0,
-        "num_inference_steps": 4,
-        "height": 768,
-        "width": 768,
+        "num_inference_steps": 28,
+        "height": 512,
+        "width": 512,
         "prompt": "A close-up HD shot of a vibrant macaw parrot perched on a branch in a lush jungle ",
         "dtype": torch.float16,
     }
