@@ -40,7 +40,7 @@ import openvino.torch  # noqa: F401  # Import to enable optimizations from OpenV
 from PIL import Image
 from diffusers import UNet2DConditionModel, DiffusionPipeline, LCMScheduler, StableDiffusion3Pipeline
 import nncf
-from examples.usecases.llm_diffusion_serving_app.docker.sd.utils import collect_calibration_data, init_pipeline, export_models
+from sd.utils import collect_calibration_data, init_pipeline, export_models, load_fx_pipeline
 from pathlib import Path
 import pickle
 from nncf.quantization.range_estimator import RangeEstimatorParametersSet
@@ -48,14 +48,15 @@ from nncf.quantization.range_estimator import RangeEstimatorParametersSet
 class RunMode(Enum):
     EAGER = "eager FP"
     TC_INDUCTOR = "tc_inductor I8"
-    TC_OPENVINO = "tc_openvino FP"
+    TC_OPENVINO_FP = "tc_openvino FP"
+    TC_OPENVINO_INT8 = "tc_openvino I8"
 
 
 def setup_pipeline(run_mode: str, ckpt: str, dtype=torch.float16) -> DiffusionPipeline:
     """Setup function remains unchanged"""
     print(f"\nInitializing pipeline with mode: {run_mode}")
 
-    if run_mode == RunMode.TC_OPENVINO.value:
+    if run_mode in [RunMode.TC_OPENVINO_FP.value, RunMode.TC_OPENVINO_INT8.value]:
         compile_options = {
             "backend": "openvino",
             "options": {"device": "CPU", "config": {"PERFORMANCE_HINT": "LATENCY"}},
@@ -67,38 +68,17 @@ def setup_pipeline(run_mode: str, ckpt: str, dtype=torch.float16) -> DiffusionPi
     else:  # eager mode
         compile_options = {}
         print("Using eager mode (no compilation)")
-
-    pipe = StableDiffusion3Pipeline.from_pretrained("stabilityai/stable-diffusion-3-medium-diffusers", text_encoder_3=None, tokenizer_3=None)
+    if run_mode in [RunMode.EAGER.value, RunMode.TC_INDUCTOR.value, RunMode.TC_OPENVINO_FP.value]:
+        pipe = StableDiffusion3Pipeline.from_pretrained("stabilityai/stable-diffusion-3-medium-diffusers", text_encoder_3=None, tokenizer_3=None)
+    else:
+        pipe = load_fx_pipeline(ckpt)
 
     if run_mode != RunMode.EAGER.value:
         print("Torch.Compiling models...")
-        models_dict, configs_dict = export_models(pipe)
-        
-        calibration_dataset = collect_calibration_data(pipe, calibration_dataset_size=1, num_inference_steps=1)
-
-        models_dict['text_encoder'] = nncf.compress_weights(models_dict['text_encoder'])
-        models_dict['text_encoder_2'] = nncf.compress_weights(models_dict['text_encoder_2'])
-        models_dict['vae_encoder'] = nncf.compress_weights(models_dict['vae_encoder'])
-        models_dict['vae_decoder'] = nncf.compress_weights(models_dict['vae_decoder'])
-
-        transformer = models_dict["transformer"]
-        quantized_transformer = nncf.quantize(
-            transformer,
-            calibration_dataset=nncf.Dataset(calibration_dataset),
-            subset_size=len(calibration_dataset),
-            model_type=nncf.ModelType.TRANSFORMER,
-            advanced_parameters=nncf.AdvancedQuantizationParameters(
-                smooth_quant_alpha=0.7,
-                disable_bias_correction=True,
-                weights_range_estimator_params=RangeEstimatorParametersSet.MINMAX,
-                activations_range_estimator_params=RangeEstimatorParametersSet.MINMAX,
-            )
-        )
         pipe.text_encoder = torch.compile(pipe.text_encoder, **compile_options)
         pipe.text_encoder_2 = torch.compile(pipe.text_encoder_2, **compile_options)
-        pipe.transformer = torch.compile(quantized_transformer, **compile_options)
-        pipe.vae.decode = torch.compile(pipe.vae.decode, **compile_options)
-        pipe = init_pipeline(models_dict, configs_dict) 
+        pipe.transformer = torch.compile(pipe.transformer, **compile_options)
+        pipe.vae.decoder = torch.compile(pipe.vae.decoder, **compile_options)
 
     pipe.to("cpu")
     return pipe
@@ -354,11 +334,12 @@ def main():
     run_modes = [
         RunMode.EAGER.value,
         RunMode.TC_INDUCTOR.value,
-        RunMode.TC_OPENVINO.value,
+        RunMode.TC_OPENVINO_FP.value,
+        RunMode.TC_OPENVINO_INT8.value,
     ]
 
     params = {
-        "ckpt": "stabilityai/stable-diffusion-3-medium",
+        "ckpt": "/home/model-server/model-store/stabilityai---stable-diffusion-xl-base-1.0/model",
         "guidance_scale": 5.0,
         "num_inference_steps": 28,
         "height": 512,
