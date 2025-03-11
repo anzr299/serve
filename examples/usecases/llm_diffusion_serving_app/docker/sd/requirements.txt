@@ -1,5 +1,7 @@
-openvino>=2024.6.0
-torch>=2.1.0
+--extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+--pre
+openvino
+torch>=2.6.0
 diffusers @ git+https://github.com/anzr299/diffusers.git@patch-1
 datasets
-nncf
+nncf 

@@ -1,1 +1,2 @@
-openvino>=2024.1.0
+--extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
+openvino >= 2025.0.0
