@@ -62,6 +62,7 @@ quantized_transformer = nncf.quantize(transformer, calibration_dataset=nncf.Data
                                                                             disable_bias_correction=True, 
                                                                             weights_range_estimator_params=RangeEstimatorParametersSet.MINMAX,
                                                                             activations_range_estimator_params=RangeEstimatorParametersSet.MINMAX,))
+models_dict["transformer"] = quantized_transformer
 fx_pipe = init_pipeline(models_dict, configs_dict)
 save_fx_pipeline(fx_pipe, args.model_path)
 
