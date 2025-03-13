@@ -19,6 +19,7 @@ from tabulate import tabulate
 import datasets
 import nncf
 from nncf.torch.dynamic_graph.patch_pytorch import disable_patching
+from torch.export.dynamic_shapes import Dim
 
 class FXAutoModelForCausalLM(OptimizedModel, GenerationMixin):
     def __init__(
@@ -136,7 +137,6 @@ class FXAutoModelForCausalLM(OptimizedModel, GenerationMixin):
                 logits = self.get_prefill(input_ids, cache_position)(input_ids, cache_position)
         else:
             logits = self.model(input_ids, cache_position)
-
         return CausalLMOutputWithPast(logits=logits)
 
     def can_generate(self):
@@ -158,7 +158,7 @@ class TorchExportableModuleWithStaticCacheDynamicShape(TorchExportableModuleWith
         return outs.logits
 
 
-def convert_and_export_with_cache(model: PreTrainedModel, use_torch_export=True):
+def convert_and_export_with_cache(model: PreTrainedModel, re_export=False):
     """
     Convert a `PreTrainedModel` into an exportable module and export it using `torch.export`
     or `torch._export.capture_pre_autograd_graph`.
@@ -168,13 +168,15 @@ def convert_and_export_with_cache(model: PreTrainedModel, use_torch_export=True)
     with torch.no_grad():
         example_input_ids = torch.ones(1, 8, dtype=torch.long)
         example_cache_position = torch.arange(0, 8, dtype=torch.long)
-        model(example_input_ids)
-        sequence_length = torch.export.Dim("sequence_length", min=1, max=128)
-        dynamic_shapes = {"input_ids": {1: sequence_length}, "cache_position": {0: sequence_length}}
+        if(not re_export):
+            model(example_input_ids)
+            model = TorchExportableModuleWithStaticCacheDynamicShape(model)
+        dynamic_shapes = {"input_ids": {1: Dim.AUTO}, "cache_position": {0: Dim.AUTO}}
 
         exported_program = torch.export.export_for_training(
-            TorchExportableModuleWithStaticCacheDynamicShape(model),
+            model,
             args=(example_input_ids, example_cache_position),
             dynamic_shapes=dynamic_shapes
         ).run_decompositions(decomp_table={})
         return exported_program
+    

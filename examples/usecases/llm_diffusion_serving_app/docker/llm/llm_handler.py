@@ -9,6 +9,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from ts.handler_utils.timer import timed
 from ts.torch_handler.base_handler import BaseHandler
+from utils import PretrainedConfig, GenerationConfig, FXAutoModelForCausalLM
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +47,11 @@ class LlmHandler(BaseHandler):
         logger.info(f"Loading model {model_dir}...")
         t0 = time.time()
         self.tokenizer = AutoTokenizer.from_pretrained(model_dir)
-        self.model = AutoModelForCausalLM.from_pretrained(model_dir)
+        model_config = PretrainedConfig.from_pretrained(model_dir)
+        self.generation_config = GenerationConfig.from_pretrained(model_dir)
+        exported_model = torch.export.load(f"{model_dir}/exported_llama.pt2")
+        graph_module = exported_model.module()
+        self.model = FXAutoModelForCausalLM(graph_module, model_config, compile=compile, backend='openvino')
 
         # Get backend for model-confil.yaml. Defaults to "openvino"
         compile_options = {}
@@ -57,10 +62,7 @@ class LlmHandler(BaseHandler):
         }
         logger.info(f"Loading LLM model with PT2 compiler options: {compile_options}")
 
-        self.model = torch.compile(self.model, **compile_options)
-
         self.model.to(self.device)
-        self.model.eval()
 
         logger.info(f"Time to load {model_dir}: {time.time() - t0:.02f} seconds")
         self.initialized = True
@@ -80,7 +82,7 @@ class LlmHandler(BaseHandler):
 
         self.user_prompt = input_data["user_prompt"]
         self.prompt_template = input_data["prompt_template"]
-        encoded_prompt = self.tokenizer(self.prompt_template, return_tensors="pt").to(
+        encoded_prompt = self.tokenizer(self.prompt_template, return_tensors="pt")["input_ids"].to(
             self.device
         )
 
@@ -92,21 +94,18 @@ class LlmHandler(BaseHandler):
     def inference(self, input_data):
         generated_text = " "
         try:
-            generation_params = {
-                "do_sample": True,
-                "max_new_tokens": input_data["max_new_tokens"],
-                "temperature": input_data["temperature"],
-                "top_k": input_data["top_k"],
-                "top_p": input_data["top_p"],
-                "repetition_penalty": 1.2,
-                "pad_token_id": self.tokenizer.pad_token_id,
-                "eos_token_id": self.tokenizer.eos_token_id,
-            }
+            self.generation_config.do_sample=False
+            self.generation_config.max_new_tokens=input_data["max_new_tokens"]
+            self.generation_config.temperature=None
+            self.generation_config.top_p=None
+            self.generation_config.repetition_penalty=1.2
+            self.generation_config.pad_token_id=self.tokenizer.pad_token_id
+            self.generation_config.eos_token_id=self.tokenizer.eos_token_id
 
             with torch.no_grad():
                 outputs = self.model.generate(
-                    **input_data["encoded_prompt"],
-                    **generation_params,
+                    input_data["encoded_prompt"],
+                    generation_config=self.generation_config
                 )
 
             generated_text = self.tokenizer.decode(outputs[0], skip_special_tokens=True)

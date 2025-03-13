@@ -31,6 +31,7 @@ setup_llm() {
             --version 1.0 \
             --handler llm_handler.py \
             --config-file model-config.yaml \
+            --extra-files "utils.py" \
             --archive-format no-archive
 
         mv /home/model-server/model-store/$MODEL_DIR_LLM/model $MODEL_DIR_LLM

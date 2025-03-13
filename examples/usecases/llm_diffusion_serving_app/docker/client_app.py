@@ -99,7 +99,7 @@ with st.sidebar:
 
     st.subheader("Stable Diffusion Parameters")
     num_inference_steps = st.sidebar.number_input(
-        "steps", min_value=1, max_value=100, value=4, step=1
+        "steps", min_value=1, max_value=100, value=28, step=1
     )
 
     guidance_scale = st.sidebar.number_input(

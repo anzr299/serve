@@ -47,7 +47,7 @@ from nncf.quantization.range_estimator import RangeEstimatorParametersSet
 
 class RunMode(Enum):
     EAGER = "eager FP"
-    TC_INDUCTOR = "tc_inductor I8"
+    TC_INDUCTOR = "tc_inductor FP"
     TC_OPENVINO_FP = "tc_openvino FP"
     TC_OPENVINO_INT8 = "tc_openvino I8"
 
